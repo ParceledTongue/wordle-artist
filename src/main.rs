@@ -2,11 +2,9 @@ use clap::{ArgGroup, Parser};
 use itertools::izip;
 use rand::distributions::WeightedIndex;
 use rand::prelude::*;
-use std::collections::HashSet;
-use std::fs;
-use std::io;
+use std::collections::{HashMap, HashSet};
 use std::iter::repeat;
-use std::str;
+use std::{fs, io, str};
 
 const WORD_LENGTH: usize = 5;
 const GUESS_COUNT: usize = 6;
@@ -86,8 +84,11 @@ fn find_matches<'a>(all_words: &[&'a str], solution: &str, goal_row: &[bool]) ->
 }
 
 fn does_match(test_word: &str, solution: &str, goal_row: &[bool]) -> bool {
-    // TODO hash set is an inaccurate way to do this, need sensitivity to repeats
-    let mut yellow_letters: HashSet<char> = solution.chars().collect();
+    let mut unused_counts: HashMap<char, usize> = HashMap::new();
+    for char in solution.chars() {
+        let count = unused_counts.entry(char).or_default();
+        *count += 1;
+    }
 
     for (test_char, solution_char, &should_match) in
         izip!(test_word.chars(), solution.chars(), goal_row.iter())
@@ -97,7 +98,8 @@ fn does_match(test_word: &str, solution: &str, goal_row: &[bool]) -> bool {
             return false;
         }
         if does_match {
-            yellow_letters.remove(&solution_char);
+            let count = unused_counts.entry(test_char).or_default();
+            *count -= 1;
         }
     }
 
@@ -105,7 +107,7 @@ fn does_match(test_word: &str, solution: &str, goal_row: &[bool]) -> bool {
     test_word
         .chars()
         .enumerate()
-        .all(|(i, c)| goal_row[i] || !yellow_letters.contains(&c))
+        .all(|(i, c)| goal_row[i] || unused_counts.get(&c).unwrap_or(&0) == &0)
 }
 
 fn format_answer(answer: &[Vec<&str>]) -> String {
