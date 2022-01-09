@@ -11,3 +11,4 @@ edition = "2021"
 itertools = "0.10"
 rand = "0.8"
 clap = { version = "3.0", features = ["derive"] }
+rayon = "1.5"

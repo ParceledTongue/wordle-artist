@@ -19,7 +19,7 @@
         "args": [
             "run",
             // "--release",
-            "beret",
+            "tests",
             "-f",
             "artfiles/smile.art"
         ],

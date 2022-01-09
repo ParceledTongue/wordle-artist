@@ -1,10 +1,13 @@
-use clap::{ArgGroup, Parser};
-use itertools::izip;
+use clap::{ArgEnum, ArgGroup, Parser};
+use itertools::{izip, Itertools};
 use rand::distributions::WeightedIndex;
 use rand::prelude::*;
+use rayon::prelude::*;
 use std::collections::{HashMap, HashSet};
 use std::iter::repeat;
 use std::{fs, io, str};
+
+// TODO memoize some stuff?
 
 const WORD_LENGTH: usize = 5;
 const GUESS_COUNT: usize = 6;
@@ -21,6 +24,16 @@ struct Args {
     /// Path to artfile containing the target pattern
     #[clap(short = 'f', long, group = "art")]
     artfile: Option<String>,
+    /// The output format
+    #[clap(long)]
+    #[clap(arg_enum)]
+    format: Option<OutputFormat>,
+}
+
+#[derive(Clone, ArgEnum)]
+enum OutputFormat {
+    Example,
+    Full,
 }
 
 fn main() {
@@ -31,10 +44,7 @@ fn main() {
         "Solution should be 5 letters",
     );
 
-    let all_words: Vec<&str> = std::str::from_utf8(include_bytes!("../dict.txt"))
-        .expect("Could not read dictionary")
-        .lines()
-        .collect();
+    let all_words: Vec<&str> = include_str!("../dict.txt").lines().collect();
 
     let goal_shape = match (args.pattern, args.artfile) {
         (Some(pattern), _) => pattern_from_string(&pattern),
@@ -49,7 +59,11 @@ fn main() {
         .map(|goal_row| find_matches(&all_words, &args.solution, goal_row))
         .collect();
 
-    println!("{}", format_answer(&answer));
+    let formatter = match args.format.unwrap_or(OutputFormat::Example) {
+        OutputFormat::Example => format_example,
+        OutputFormat::Full => format_full,
+    };
+    println!("{}", formatter(&answer));
 }
 
 fn pattern_from_string(string: &str) -> Vec<Vec<bool>> {
@@ -77,14 +91,14 @@ fn pattern_for_line<S: AsRef<str>>(line: S) -> Vec<bool> {
 
 fn find_matches<'a>(all_words: &[&'a str], solution: &str, goal_row: &[bool]) -> Vec<&'a str> {
     all_words
-        .iter()
+        .par_iter()
         .cloned()
-        .filter(|&test_word| does_match(test_word, solution, goal_row))
+        .filter(|&test_word| does_match(test_word, &solution.to_lowercase(), goal_row))
         .collect()
 }
 
 fn does_match(test_word: &str, solution: &str, goal_row: &[bool]) -> bool {
-    let mut unused_counts: HashMap<char, usize> = HashMap::new();
+    let mut unused_counts: HashMap<char, usize> = HashMap::with_capacity(WORD_LENGTH);
     for char in solution.chars() {
         let count = unused_counts.entry(char).or_default();
         *count += 1;
@@ -110,9 +124,9 @@ fn does_match(test_word: &str, solution: &str, goal_row: &[bool]) -> bool {
         .all(|(i, c)| goal_row[i] || unused_counts.get(&c).unwrap_or(&0) == &0)
 }
 
-fn format_answer(answer: &[Vec<&str>]) -> String {
-    let mut lines = Vec::new();
-    let mut used_words = HashSet::new();
+fn format_example(answer: &[Vec<&str>]) -> String {
+    let mut lines = Vec::with_capacity(GUESS_COUNT);
+    let mut used_words = HashSet::with_capacity(GUESS_COUNT - 1);
     let mut rng = thread_rng();
 
     for all_row_answers in answer {
@@ -139,4 +153,11 @@ fn format_answer(answer: &[Vec<&str>]) -> String {
     }
 
     lines.join("\n")
+}
+
+fn format_full(answer: &[Vec<&str>]) -> String {
+    answer
+        .iter()
+        .map(|line| line.iter().cloned().map(str::to_uppercase).join(" "))
+        .join("\n")
 }
